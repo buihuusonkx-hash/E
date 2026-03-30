@@ -101,32 +101,38 @@ const App: React.FC = () => {
     if (!result) return;
     
     // Nâng cấp bộ nhận diện Toán học
-    const processMathForWord = (text: string) => {
-      // Loại bỏ thẻ semantics và annotation để Word hiểu đây là phương trình OMML chuẩn
-      const cleanMathML = (mathml: string) => {
-        return mathml
-          .replace(/<semantics[^>]*>/g, '')
-          .replace(/<\/semantics>/g, '')
-          .replace(/<annotation[^>]*>.*?<\/annotation>/g, '');
-      };
-
+    // Hỗ trợ tạo mã MathType (LaTeX) thuần để giáo viên dùng lệnh Toggle TeX hoặc phần mềm Convert vào MathType
+    let mathBlocks: string[] = [];
+    const protectMath = (text: string) => {
+      let counter = 0;
       return text
-        .replace(/\$\$(.*?)\$\$/gs, (match, math) => {
-          try { return cleanMathML(katex.renderToString(math, { output: 'mathml', displayMode: true })); } catch (e) { return match; }
+        .replace(/\$\$(.*?)\$\$/gs, (match) => {
+          mathBlocks[counter] = match;
+          return `###MATH_BLOCK_${counter++}###`;
         })
-        .replace(/\\\[(.*?)\\\]/gs, (match, math) => {
-          try { return cleanMathML(katex.renderToString(math, { output: 'mathml', displayMode: true })); } catch (e) { return match; }
+        .replace(/\\\[(.*?)\\\]/gs, (match) => {
+          // Chuẩn hóa lặp lại về $$ cho MathType dễ đọc nếu cần, hoặc giữ nguyên
+          mathBlocks[counter] = match;
+          return `###MATH_BLOCK_${counter++}###`;
         })
-        .replace(/\$(.*?)\$/g, (match, math) => {
-          try { return cleanMathML(katex.renderToString(math, { output: 'mathml', displayMode: false })); } catch (e) { return match; }
+        .replace(/\$(.*?)\$/g, (match) => {
+          mathBlocks[counter] = match;
+          return `###MATH_BLOCK_${counter++}###`;
         })
-        .replace(/\\\((.*?)\\\)/g, (match, math) => {
-          try { return cleanMathML(katex.renderToString(math, { output: 'mathml', displayMode: false })); } catch (e) { return match; }
+        .replace(/\\\((.*?)\\\)/g, (match) => {
+          mathBlocks[counter] = match;
+          return `###MATH_BLOCK_${counter++}###`;
         });
     };
 
-    const textWithMathML = processMathForWord(result);
-    const htmlContent = marked.parse(textWithMathML);
+    const textProtected = protectMath(result);
+    // @ts-ignore
+    let htmlContent = marked.parse(textProtected) as string;
+    
+    // Khôi phục lại công thức nguyên bản (không render thành OMML nữa, để nguyên chuẩn text MathType)
+    mathBlocks.forEach((math, i) => {
+      htmlContent = htmlContent.replace(`###MATH_BLOCK_${i}###`, `<span>${math}</span>`);
+    });
     
     // Bọc HTML vào cấu trúc file Word
     const preHtml = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns:m='http://schemas.microsoft.com/office/2004/12/omml' xmlns:mml='http://www.w3.org/1998/Math/MathML' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -170,31 +176,33 @@ const App: React.FC = () => {
 
     setLoading(true);
     const msgKey = 'ai-process';
-    message.loading({ content: 'AI đang phân tích và xử lý toán học...', key: msgKey, duration: 0 });
+    message.loading({ content: `AI đang phân tích và xử lý môn ${subject} ${grade}...`, key: msgKey, duration: 0 });
 
     try {
       const ai = new GoogleGenAI({ apiKey });
       
-      const promptText = `Bạn là chuyên gia giáo dục xuất sắc của Bộ GD&ĐT Việt Nam, am hiểu sâu sắc Năng lực số.
+      const promptText = `Bạn là chuyên gia giáo dục xuất sắc của Bộ GD&ĐT Việt Nam, am hiểu sâu sắc Năng lực số và Trí tuệ nhân tạo.
       
-      YÊU CẦU CỐT LÕI: Giữ nguyên cấu trúc và nội dung của giáo án gốc. Chỉ thực hiện việc BỔ SUNG nội dung phát triển năng lực số.
+      YÊU CẦU CỐT LÕI (RẤT QUAN TRỌNG): 
+      - Bạn BẮT BUỘC PHẢI GIỮ NGUYÊN 100% cấu trúc, nội dung và từng câu chữ của giáo án gốc. TUYỆT ĐỐI KHÔNG LƯỢC BỎ, KHÔNG TÓM TẮT.
+      - Bạn chỉ được phép CHÈN THÊM nội dung hướng dẫn Năng lực số và Ứng dụng AI.
       
       THÔNG TIN CƠ BẢN:
       - Môn học: ${subject}
       - Khối lớp: ${grade}
       
-      HƯỚNG DẪN BỔ SUNG NĂNG LỰC SỐ:
-      1. Mục tiêu: Bổ sung thêm mục tiêu "Năng lực số".
-      2. Học liệu: Gợi ý công cụ số (Canva, GeoGebra, Padlet...${isAI ? ', ChatGPT, Gemini...' : ''}).
-      3. Hoạt động học tập: Tại mỗi hoạt động, chèn thêm gợi ý tổ chức bằng công cụ số.
-      4. QUY TẮC ĐÁNH DẤU: Nội dung bổ sung phải in đậm và bắt đầu bằng: **[💡 BỔ SUNG NĂNG LỰC SỐ]: ...**
+      HƯỚNG DẪN BỔ SUNG NĂNG LỰC SỐ VÀ AI:
+      1. Mục tiêu: Bổ sung thêm vào phần mục tiêu: "Năng lực số và Ứng dụng AI".
+      2. Học liệu: Chèn thêm công cụ số và AI phù hợp (ví dụ: Canva, GeoGebra, Padlet, ChatGPT, Gemini...).
+      3. Hoạt động học tập: Tại mỗi hoạt động, chèn thêm 1 mục nhỏ gợi ý tổ chức bằng công cụ số/AI.
+      4. QUY TẮC ĐÁNH DẤU: Nội dung bổ sung phải in đậm và bắt đầu bằng: **[💡 BỔ SUNG NĂNG LỰC SỐ & AI]: ...**
       
-      🔥 XỬ LÝ CÔNG THỨC TOÁN BỊ LỖI (CỰC KỲ QUAN TRỌNG) 🔥:
-      Do tài liệu gốc được chuyển từ PDF/Word, các công thức toán có thể bị lỗi font thành các ký tự rác (ví dụ: lim[f0]x|->...).
-      - BẠN PHẢI NHẬN DIỆN VÀ TỰ ĐỘNG SỬA LẠI toàn bộ các công thức lỗi này thành chuẩn LaTeX. KHÔNG sao chép lại rác toán học.
-      - BẮT BUỘC bọc công thức trong dấu $ (cho trong dòng) hoặc $$ (cho riêng dòng).
+      🔥 XỬ LÝ CÔNG THỨC TOÁN (CHUẨN MATHTYPE) 🔥:
+      Do tài liệu gốc được chuyển từ PDF/Word, các phương trình/công thức có thể bị lỗi font.
+      - BẠN PHẢI SỬA TOÀN BỘ CÔNG THỨC LỖI THÀNH DẠNG MÃ MATHTYPE (chuẩn LaTeX).
+      - BẮT BUỘC bọc công thức trong dấu $ (cho trong dòng) hoặc $$ (cho khối riêng). VÍ DỤ: $\\int_{0}^{1} x^2 dx$
       
-      Trả về kết quả định dạng Markdown.`;
+      Trả về kết quả định dạng Markdown. Bao gồm toàn bộ văn bản giáo án gốc kèm các đoạn chèn thêm.`;
 
       const parts: any[] = [{ text: promptText }];
 
